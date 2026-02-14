@@ -1,5 +1,5 @@
 class TodoApp {
-    constructor() {
+    constructor()  {
         Object.assign(this, {
             input: document.getElementById("todoInput"),
             btn: document.getElementById("addBtn"),
@@ -7,52 +7,53 @@ class TodoApp {
             count: document.getElementById("todoCount"),
             todos: [],
             editId: null,
+            apiUrl: "/api"
         });
         this.init();
+    }
+
+    init() {
+        this.btn.onclick = () => this.add();
+        this.input.addEventListener("keypress", e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), this.add()));
         this.loadTodos();
     }
 
     async loadTodos() {
         try {
-           
-            this.todos = await api.getTodos();
+            const res = await fetch(`${this.apiUrl}/todos`);
+            this.todos = await res.json();
             this.render();
-        } catch (error) {
-            console.error("Failed to load todos:", error);
+        } catch (e) {
+            alert("Failed to load todos. Make sure the server is running.");
         }
     }
-
-    init() {
-        this.btn.onclick = () => this.add();
-        this.input.addEventListener("keypress", e => {
-            if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                this.add();
-            }
-        });
-    }
-
+    
     async add() {
         const text = this.input.value.trim();
-        if (!text) return;
+        if (!text) return alert("Please enter a task.");
         
         try {
-            const newTodo = await api.addTodo(text);
-            this.todos.unshift(newTodo);
+            const res = await fetch(`${this.apiUrl}/todos`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({text})
+            });
+            const todo = await res.json();
+            this.todos.unshift(todo);
             this.input.value = "";
             this.render();
-        } catch (error) {
+        } catch (e) {
             alert("Failed to add todo");
         }
     }
 
     async del(id) {
         try {
-            await api.deleteTodo(id);
+            await fetch(`${this.apiUrl}/todos/${id}`, {method: "DELETE"});
             this.todos = this.todos.filter(t => t.id !== id);
             this.render();
-        } catch (error) {
-            alert("Failed to delete");
+        } catch (e) {
+            alert("Failed to delete todo");
         }
     }
 
@@ -60,18 +61,21 @@ class TodoApp {
         const todo = this.todos.find(t => t.id === id);
         if (!todo) return;
         try {
-            await api.toggleTodo(id, !todo.completed);
+            await fetch(`${this.apiUrl}/todos/${id}`, {
+                method: "PATCH",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({completed: !todo.completed})
+            });
             todo.completed = !todo.completed;
             this.render();
-        } catch (error) {
-            alert("Update failed");
+        } catch (e) {
+            alert("Failed to update todo");
         }
     }
-
+    
     edit(id) {
         this.editId = id;
         this.render();
-        
         setTimeout(() => document.getElementById(`edit-${id}`)?.focus(), 0);
     }
 
@@ -80,58 +84,64 @@ class TodoApp {
         const text = ta?.value.trim();
         if (!text) return;
         
-        const todo = this.todos.find(t => t.id === id);
-        if (todo) {
-            try {
-                await api.editTodo(id, text);
-                todo.text = text;
-                this.editId = null;
-                this.render();
-            } catch (error) {
-                alert("Save failed");
-            }
+        try {
+            await fetch(`${this.apiUrl}/todos/${id}`, {
+                method: "PATCH",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({text})
+            });
+            const todo = this.todos.find(t => t.id === id);
+            if (todo) todo.text = text;
+            this.editId = null;
+            this.render();
+        } catch (e) {
+            alert("Failed to save edit");
         }
     }
 
     escape(s) {
         const d = document.createElement("div");
-        d.textContent = s;
-        return d.innerHTML;
+        return d.textContent = s, d.innerHTML
     }
 
     render() {
-        this.list.innerHTML = this.todos.map(t => 
-            this.editId === t.id 
-                ? `<li class="list-group-item">
-                    <textarea id="edit-${t.id}" class="form-control mb-2" rows="2">${this.escape(t.text)}</textarea>
-                    <div class="btn-group w-100">
-                        <button class="btn btn-sm btn-success" onclick="app.saveEdit(${t.id})">Save</button>
-                        <button class="btn btn-sm btn-secondary" onclick="app.editId=null,app.render()">Cancel</button>
-                    </div>
-                </li>`
-                : `<li class="list-group-item d-flex gap-2 align-items-start">
-                    <input type="checkbox" class="form-check-input mt-1" ${t.completed ? "checked" : ""} onchange="app.toggle(${t.id})">
-                    <span class="flex-grow-1 ${t.completed ? "text-decoration-line-through text-muted" : ""}">${this.escape(t.text)}</span>
-                    <button class="btn btn-sm btn-outline-info" onclick="app.edit(${t.id})">Edit</button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="app.del(${t.id})">Delete</button>
-                </li>`
-        ).join("") || '<li class="list-group-item text-center text-muted">No tasks yet</li>';
-        
-        if (this.count) this.count.textContent = this.todos.length;
-    }
-}
+        const rows = this.todos.map((t, idx) => {
+            if (this.editId === t.id) {
+                return `
+                    <tr>
+                        <td>${idx + 1}</td>
+                        <td class="text-center"></td>
+                        <td>
+                            <textarea id="edit-${t.id}" class="form-control" rows="2">${this.escape(t.text)}</textarea>
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-success" onclick="app.saveEdit(${t.id})">Save</button>
+                                <button class="btn btn-sm btn-secondary" onclick="app.editId=null,app.render()">Cancel</button>
+                            </div>
+                        </td>
+                    </tr>`;
+            }
 
+            return `
+                <tr>
+                    <td>${idx + 1}</td>
+                    <td class="text-center"><input type="checkbox" class="form-check-input" ${t.completed ? "checked" : ""} onclick="app.toggle(${t.id})"></td>
+                    <td class="${t.completed ? "text-decoration-line-through text-muted" : ""}">${this.escape(t.text)}</td>
+                    <td class="text-center">
+                        <div class="btn-group" role="group">
+                            <button class="btn btn-sm btn-info" onclick="app.edit(${t.id})">Edit</button>
+                            <button class="btn btn-sm btn-danger" onclick="app.del(${t.id})">x</button>
+                        </div>
+                    </td>
+                </tr>`;
+        }).join("") || `<tr><td colspan="4" class="text-center text-muted">No tasks yet</td></tr>`;
+
+        this.list.innerHTML = rows;
+        this.count.textContent = this.todos.length;
+    }
+}  
 
 let app;
-document.addEventListener("DOMContentLoaded", () => {
-    app = new TodoApp();
-});
-
-
-if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/service-worker.js")
-            .then(reg => console.log("SW registered"))
-            .catch(err => console.log("SW registration failed", err));
-    });
-}
+document.addEventListener("DOMContentLoaded", () => app = new TodoApp());
+"serviceWorker" in navigator && window.addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));
